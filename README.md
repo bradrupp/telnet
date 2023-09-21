@@ -1,6 +1,6 @@
 # Package telnet
 
-The [`telnet` package](http://godoc.org/github.com/aprice/telnet) provides basic
+The [`telnet` package](http://godoc.org/github.com/tester2024/telnet) provides basic
 telnet client and server implementations for Go, including handling of IACs and
 extensible telnet option negotiation.
 

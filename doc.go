@@ -29,6 +29,5 @@ optional IAC handlers. Bear in mind that some handlers - for example, the
 included NAWS handler - use different Option functions to register them with a
 client versus a server; this is because they may behave differently at each end.
 See the documentation for the options for more details.
-
 */
 package telnet
