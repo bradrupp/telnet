@@ -112,47 +112,59 @@ func (c *Connection) Read(b []byte) (n int, err error) {
 	return
 }
 
+// read reads data from the Connection into the provided byte slice.
 func (c *Connection) read(b []byte) (n int, err error) {
+	// Fill the buffer with data from the connection
 	err = c.fill(len(b))
 	if err != nil {
 		return
 	}
-	var lastWrite, subStart int
-	var ignoreIAC bool
+
+	lastWrite := 0     // Track the last index written in the byte slice
+	var ignoreIAC bool // Flag to ignore IAC sequence
+
+	// write is a helper function to copy data from the Connection's buffer to the byte slice
 	write := func(end int) int {
+		// If the read index is at the end, return 0
 		if c.r == end {
 			return 0
 		}
+		// Copy data from the Connection's buffer to the byte slice
 		nn := copy(b[lastWrite:], c.buf[c.r:end])
 		n += nn
 		lastWrite += nn
 		c.r += nn
 		return nn
 	}
+
+	// endIAC resets the IAC sequence variables and sets the read index to the provided value
 	endIAC := func(i int) {
-		subStart = 0
 		c.iac = false
 		c.cmd = 0
 		c.option = 0
 		c.r = i + 1
 	}
+
+	// Iterate over the buffer and copy data to the byte slice
 	for i := c.r; i < c.w && lastWrite < len(b); i++ {
 		ch := c.buf[i]
+
+		// Check for IAC sequence
 		if ch == IAC && !ignoreIAC {
 			if c.iac && c.cmd == 0 {
-				// Escaped IAC in text
+				// Escaped IAC in text, copy the data and move the read index
 				write(i)
 				c.r++
 				c.iac = false
 				continue
 			} else if c.iac && c.buf[i-1] == IAC {
-				// Escaped IAC inside IAC sequence
+				// Escaped IAC inside IAC sequence, remove the escaped IAC and set the ignore flag
 				copy(c.buf[:i], c.buf[i+1:])
 				i--
 				ignoreIAC = true
 				continue
 			} else if !c.iac {
-				// Start of IAC sequence
+				// Start of IAC sequence, copy the data and set the iac flag
 				write(i)
 				c.iac = true
 				continue
@@ -162,47 +174,68 @@ func (c *Connection) read(b []byte) (n int, err error) {
 		ignoreIAC = false
 
 		if c.iac && c.cmd == 0 {
+			// Handle IAC command
 			c.cmd = ch
 			if ch == SB {
-				subStart = i + 2
+				// Handle SB command, check if there is enough data in the buffer
+				if i+2 >= c.w {
+					break
+				}
+				c.r = i + 2
 			}
 			continue
 		} else if c.iac && c.option == 0 {
+			// Handle IAC option
 			c.option = ch
 			if c.cmd != SB {
-				c.handleNegotiation()
+				// Handle negotiation and reset IAC sequence
+				if _, err := c.handleNegotiation(); err != nil {
+					return 0, err
+				}
 				endIAC(i)
 			}
 			continue
 		} else if c.iac && c.cmd == SB && ch == SE && c.buf[i-1] == IAC {
+			// Handle SB command with SE option
 			if h, ok := c.OptionHandlers[c.option]; ok {
-				h.HandleSB(c, c.buf[subStart:i-1])
+				h.HandleSB(c, c.buf[c.r:i-1])
 			}
+			// Reset IAC sequence
 			endIAC(i)
 			continue
 		}
+
 	}
 
+	// Copy remaining data from the buffer to the byte slice
 	nn := copy(b[lastWrite:], c.buf[c.r:c.w])
 	n += nn
 	c.r += nn
 	return
 }
 
+// fill reads from the connection until it has at least
+// the requested number of bytes in the buffer.
 func (c *Connection) fill(requestedBytes int) error {
+	// If there are bytes remaining to be read in the buffer,
+	// shift them to the beginning of the buffer.
 	if c.r > 0 {
 		copy(c.buf, c.buf[c.r:])
 		c.w -= c.r
 		c.r = 0
 	}
-
+	// If the buffer is not big enough to hold the requested
+	// number of bytes, create a new buffer with the requested
+	// size and copy the existing data into it.
 	if len(c.buf) < requestedBytes {
-		buf := make([]byte, requestedBytes)
-		c.w = copy(buf, c.buf[c.r:c.w])
+		newBuf := make([]byte, requestedBytes)
+		copy(newBuf, c.buf[c.r:c.w])
+		c.buf = newBuf
+		c.w = c.w - c.r
 		c.r = 0
-		c.buf = buf
 	}
-
+	// Read from the connection into the buffer and update the
+	// write pointer.
 	nn, err := c.Conn.Read(c.buf[c.w:])
 	c.w += nn
 	return err
@@ -210,17 +243,20 @@ func (c *Connection) fill(requestedBytes int) error {
 
 // SetWindowTitle attempts to set the client's telnet window title. Clients may
 // or may not support this.
-func (c *Connection) SetWindowTitle(title string) {
-	fmt.Fprintf(c, TitleBarFmt, title)
+func (c *Connection) SetWindowTitle(title string) error {
+	if _, err := fmt.Fprintf(c, TitleBarFmt, title); err != nil {
+		return err
+	}
+	return nil
 }
 
-func (c *Connection) handleNegotiation() {
+func (c *Connection) handleNegotiation() (int, error) {
 	switch c.cmd {
 	case WILL:
 		if h, ok := c.OptionHandlers[c.option]; ok {
 			h.HandleWill(c)
 		} else {
-			c.Conn.Write([]byte{IAC, DONT, c.option})
+			return c.writeBytes(IAC, DONT, c.option)
 		}
 	case WONT:
 		c.clientWont[c.option] = true
@@ -228,9 +264,14 @@ func (c *Connection) handleNegotiation() {
 		if h, ok := c.OptionHandlers[c.option]; ok {
 			h.HandleDo(c)
 		} else {
-			c.Conn.Write([]byte{IAC, WONT, c.option})
+			return c.writeBytes(IAC, WONT, c.option)
 		}
 	case DONT:
 		c.clientDont[c.option] = true
 	}
+	return 0, nil
+}
+
+func (c *Connection) writeBytes(bytes ...byte) (int, error) {
+	return c.Conn.Write(bytes)
 }
