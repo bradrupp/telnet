@@ -157,7 +157,7 @@ func (c *Connection) read(b []byte) (n int, err error) {
 				c.r++
 				c.iac = false
 				continue
-			} else if c.iac && c.buf[i-1] == IAC {
+			} else if c.iac && i-1 > len(c.buf) && c.buf[i-1] == IAC {
 				// Escaped IAC inside IAC sequence, remove the escaped IAC and set the ignore flag
 				copy(c.buf[:i], c.buf[i+1:])
 				i--
@@ -195,7 +195,7 @@ func (c *Connection) read(b []byte) (n int, err error) {
 				endIAC(i)
 			}
 			continue
-		} else if c.iac && i-1 >= 0 && c.cmd == SB && ch == SE && c.buf[i-1] == IAC {
+		} else if c.iac && c.cmd == SB && ch == SE && c.buf[i-1] == IAC {
 			// Handle SB command with SE option
 			if h, ok := c.OptionHandlers[c.option]; ok {
 				h.HandleSB(c, c.buf[c.r:i-1])
