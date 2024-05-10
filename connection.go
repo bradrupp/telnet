@@ -3,6 +3,7 @@ package telnet
 import (
 	"fmt"
 	"net"
+	"strings"
 )
 
 // Negotiator defines the requirements for a telnet option handler.
@@ -64,6 +65,17 @@ func NewConnection(c net.Conn, options []Option) *Connection {
 		h.Offer(conn)
 	}
 	return conn
+}
+
+// Closes the connection
+func (c *Connection) Close() (err error) {
+
+	err = c.Conn.Close()
+
+	// TODO: BR: Do I need to clean up anything in the Connection?
+	// Probably...
+
+	return err
 }
 
 // Write to the connection, escaping IAC as necessary.
@@ -275,3 +287,56 @@ func (c *Connection) handleNegotiation() (int, error) {
 func (c *Connection) writeBytes(bytes ...byte) (int, error) {
 	return c.Conn.Write(bytes)
 }
+
+func (c *Connection) Authenticate(userNamePrompt string, passwordPrompt string, userName string, password string) error {
+	var err error
+
+	_, err = c.ReadUntil(userNamePrompt)
+
+	if nil == err {
+		_, err = c.RawWrite([]byte(userName))
+
+		if nil == err {
+			_, err = c.ReadUntil(passwordPrompt)
+
+			if nil == err {
+				_, err = c.RawWrite([]byte(password))
+			}
+		}
+	}
+
+	// Clear out the username and password variables
+	userName = "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+	password = "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+
+	return err
+} // func Authenticate
+
+func (c *Connection) ReadUntil(searchStr string) (string, error) {
+	var (
+		readStr string
+		err     error
+		slRead  []byte
+		found   bool = false
+	)
+
+	slRead = make([]byte, len(searchStr))
+
+	for !found {
+		_, err = c.Read(slRead)
+
+		if nil == err {
+			readStr += string(slRead)
+
+			if strings.Contains(readStr, searchStr) {
+				found = true
+			}
+		} else {
+			// The string was not found but because of the error we
+			// need to bail out of the loop
+			found = true
+		}
+	}
+
+	return readStr, err
+} // func ReadUntil
