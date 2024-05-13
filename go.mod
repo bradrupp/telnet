@@ -1,4 +1,4 @@
-module github.com/tester2024/telnet
+module github.com/bradrupp/telnet
 
 go 1.16
 
