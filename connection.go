@@ -323,7 +323,9 @@ func (c *Connection) ReadUntil(searchStr string) (string, error) {
 	slRead = make([]byte, len(searchStr))
 
 	for !found {
+		fmt.Printf("ReadUntil 1: Search=%s\n", searchStr)
 		_, err = c.Read(slRead)
+		fmt.Printf("ReadUntil 2: Search=%s, Read=%s, Err=%v\n", searchStr, string(slRead), err)
 
 		if nil == err {
 			readStr += string(slRead)
