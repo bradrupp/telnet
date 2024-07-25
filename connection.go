@@ -330,6 +330,8 @@ func (c *Connection) ReadUntil(searchStr string) (string, error) {
 		if nil == err {
 			readStr += string(slRead)
 
+			fmt.Printf("ReadUntil 3: readstr=%s\n", readStr)
+
 			if strings.Contains(readStr, searchStr) {
 				found = true
 			}
