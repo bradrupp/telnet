@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"time"
 )
 
 // Negotiator defines the requirements for a telnet option handler.
@@ -294,12 +295,15 @@ func (c *Connection) Authenticate(userNamePrompt string, passwordPrompt string, 
 	_, err = c.ReadUntil(userNamePrompt)
 
 	if nil == err {
+		time.Sleep(100 * time.Millisecond)
 		_, err = c.RawWrite([]byte(userName))
 
 		if nil == err {
+			time.Sleep(100 * time.Millisecond)
 			_, err = c.ReadUntil(passwordPrompt)
 
 			if nil == err {
+				time.Sleep(100 * time.Millisecond)
 				_, err = c.RawWrite([]byte(password))
 			}
 		}
@@ -334,6 +338,9 @@ func (c *Connection) ReadUntil(searchStr string) (string, error) {
 
 			if strings.Contains(readStr, searchStr) {
 				found = true
+			} else {
+				// Pause for a bit before we go around the loop again
+				time.Sleep(100 * time.Millisecond)
 			}
 		} else {
 			// The string was not found but because of the error we
